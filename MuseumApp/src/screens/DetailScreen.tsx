@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,22 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  RefreshControl,
+  ActivityIndicator,
+  Alert,
+  Share,
+  Linking,
 } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList, Exhibition, News, SpecialExhibition } from '../types';
+import type { RootStackParamList, Museum, Exhibition, SpecialExhibition, News } from '../types';
+import {
+  getMuseumDetail,
+  favoriteMuseum,
+  unfavoriteMuseum,
+  checkFavoriteStatus,
+  checkInMuseum,
+} from '../services/museumApi';
 
 const COLORS = {
   primary: '#2C3E2D',
@@ -22,49 +34,162 @@ const COLORS = {
   textLight: '#8A8A8A',
   bgWarm: '#FAF8F5',
   border: '#E8E4DE',
+  error: '#E74C3C',
+  success: '#4CAF50',
 };
 
 type TabType = 'exhibits' | 'special' | 'news';
-
-const mockExhibitions: Exhibition[] = [
-  {
-    id: '1',
-    name: '紫禁城建筑艺术展',
-    description: '展示故宫建筑的历史沿革、建筑特色和修缮保护，包括太和殿、乾清宫等重要建筑的结构与装饰。',
-    location: '午门展厅',
-  },
-  {
-    id: '2',
-    name: '明清宫廷文物展',
-    description: '展出明清两代宫廷生活用品、礼仪用具、文玩字画等珍贵文物，展现皇家生活风貌。',
-    location: '乾清宫东庑',
-  },
-  {
-    id: '3',
-    name: '陶瓷馆',
-    description: '汇集历代陶瓷精品，从原始青瓷到明清官窑，系统展示中国陶瓷艺术的发展历程。',
-    location: '文华殿',
-  },
-];
-
-const mockSpecialExhibition: SpecialExhibition = {
-  id: '1',
-  title: '「千古风流」苏东坡主题特展',
-  dateRange: '2026.01.15 - 2026.04.15',
-  description: '汇集故宫博物院、上海博物馆、辽宁省博物馆等单位收藏的苏东坡相关文物，包括书法、绘画、碑帖、瓷器等，全方位展现苏东坡的艺术成就与人生境界。',
-};
-
-const mockNews: News[] = [
-  { id: '1', day: '15', month: '3月', title: '关于清明假期开放时间的公告', type: '官方公告' },
-  { id: '2', day: '10', month: '3月', title: '「紫禁城上元之夜」文化活动报名开启', type: '活动通知' },
-  { id: '3', day: '05', month: '3月', title: '陶瓷馆部分展厅临时关闭维护通知', type: '闭馆通知' },
-];
+type DetailScreenRouteProp = RouteProp<RootStackParamList, 'Detail'>;
 
 export default function DetailScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const route = useRoute();
+  const route = useRoute<DetailScreenRouteProp>();
+  const { museumId } = route.params;
+  
+  // 状态管理
+  const [museum, setMuseum] = useState<Museum | null>(null);
+  const [exhibitions, setExhibitions] = useState<Exhibition[]>([]);
+  const [specialExhibitions, setSpecialExhibitions] = useState<SpecialExhibition[]>([]);
+  const [news, setNews] = useState<News[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('exhibits');
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [checkInLoading, setCheckInLoading] = useState(false);
 
+  // 加载博物馆详情
+  const loadMuseumDetail = useCallback(async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      
+      const response = await getMuseumDetail(museumId);
+      setMuseum(response.museum);
+      setExhibitions(response.exhibitions);
+      setSpecialExhibitions(response.specialExhibitions);
+      setNews(response.news);
+      
+      // 检查收藏状态
+      try {
+        const favoriteStatus = await checkFavoriteStatus(museumId);
+        setIsFavorite(favoriteStatus);
+      } catch (err) {
+        console.error('检查收藏状态失败:', err);
+      }
+    } catch (err) {
+      setError('加载数据失败，请稍后重试');
+      console.error('加载博物馆详情失败:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [museumId]);
+
+  // 初始加载
+  useEffect(() => {
+    loadMuseumDetail();
+  }, [loadMuseumDetail]);
+
+  // 处理收藏
+  const handleFavorite = useCallback(async () => {
+    if (favoriteLoading) return;
+    
+    try {
+      setFavoriteLoading(true);
+      if (isFavorite) {
+        await unfavoriteMuseum(museumId);
+        setIsFavorite(false);
+        Alert.alert('提示', '已取消收藏');
+      } else {
+        await favoriteMuseum(museumId);
+        setIsFavorite(true);
+        Alert.alert('提示', '收藏成功');
+      }
+    } catch (err) {
+      Alert.alert('错误', '操作失败，请稍后重试');
+      console.error('收藏操作失败:', err);
+    } finally {
+      setFavoriteLoading(false);
+    }
+  }, [isFavorite, museumId, favoriteLoading]);
+
+  // 处理分享
+  const handleShare = useCallback(async () => {
+    if (!museum) return;
+    
+    try {
+      const shareContent = {
+        title: museum.name,
+        message: `推荐你去参观${museum.name}！\n地址：${museum.address}\n开放时间：${museum.openTime}`,
+        url: `museumapp://museum/${museumId}`,
+      };
+      
+      const result = await Share.share(shareContent);
+      
+      if (result.action === Share.sharedAction) {
+        console.log('分享成功');
+      }
+    } catch (err) {
+      console.error('分享失败:', err);
+    }
+  }, [museum, museumId]);
+
+  // 处理导航
+  const handleNavigate = useCallback(() => {
+    if (!museum?.address) return;
+    
+    // 使用地图应用导航
+    const encodedAddress = encodeURIComponent(museum.address);
+    const url = `geo:0,0?q=${encodedAddress}`;
+    
+    Linking.canOpenURL(url)
+      .then((supported) => {
+        if (supported) {
+          return Linking.openURL(url);
+        } else {
+          // 回退到网页版地图
+          const webUrl = `https://maps.google.com/?q=${encodedAddress}`;
+          return Linking.openURL(webUrl);
+        }
+      })
+      .catch((err) => {
+        console.error('打开地图失败:', err);
+        Alert.alert('错误', '无法打开地图应用');
+      });
+  }, [museum]);
+
+  // 处理打卡
+  const handleCheckIn = useCallback(async () => {
+    if (checkInLoading || !museum) return;
+    
+    try {
+      setCheckInLoading(true);
+      const result = await checkInMuseum(museumId);
+      
+      if (result.success) {
+        Alert.alert(
+          '打卡成功',
+          result.badge ? `恭喜获得徽章：${result.badge}` : '感谢您的参观！',
+          [{ text: '确定' }]
+        );
+      } else {
+        Alert.alert('提示', result.message || '打卡失败');
+      }
+    } catch (err) {
+      Alert.alert('错误', '打卡失败，请稍后重试');
+      console.error('打卡失败:', err);
+    } finally {
+      setCheckInLoading(false);
+    }
+  }, [museumId, museum, checkInLoading]);
+
+  // 渲染Tab内容
   const renderTabContent = () => {
     switch (activeTab) {
       case 'exhibits':
@@ -74,30 +199,52 @@ export default function DetailScreen() {
               <Text style={styles.sectionIcon}>📋</Text>
               <Text style={styles.sectionTitle}>基本陈列</Text>
             </View>
-            <View style={styles.exhibitList}>
-              {mockExhibitions.map((item) => (
-                <View key={item.id} style={styles.exhibitItem}>
-                  <Text style={styles.exhibitName}>{item.name}</Text>
-                  <Text style={styles.exhibitDesc}>{item.description}</Text>
-                  <View style={styles.exhibitLocation}>
-                    <Text style={styles.locationIcon}>📍</Text>
-                    <Text style={styles.locationText}>{item.location}</Text>
+            {exhibitions.length > 0 ? (
+              <View style={styles.exhibitList}>
+                {exhibitions.map((item, index) => (
+                  <View key={item.id} style={styles.exhibitItem}>
+                    <View style={styles.exhibitNumber}>
+                      <Text style={styles.exhibitNumberText}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.exhibitContent}>
+                      <Text style={styles.exhibitName}>{item.name}</Text>
+                      <Text style={styles.exhibitDesc}>{item.description}</Text>
+                      <View style={styles.exhibitLocation}>
+                        <Text style={styles.locationIcon}>📍</Text>
+                        <Text style={styles.locationText}>{item.location}</Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
-              ))}
-            </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.emptyText}>暂无展览信息</Text>
+            )}
           </View>
         );
       case 'special':
         return (
-          <View style={styles.specialCard}>
-            <View style={styles.specialBadge}>
-              <Text style={styles.badgeIcon}>⭐</Text>
-              <Text style={styles.badgeText}>当前特展</Text>
-            </View>
-            <Text style={styles.specialTitle}>{mockSpecialExhibition.title}</Text>
-            <Text style={styles.specialDate}>{mockSpecialExhibition.dateRange}</Text>
-            <Text style={styles.specialDesc}>{mockSpecialExhibition.description}</Text>
+          <View style={styles.specialSection}>
+            {specialExhibitions.length > 0 ? (
+              specialExhibitions.map((item) => (
+                <View key={item.id} style={styles.specialCard}>
+                  <View style={styles.specialBadge}>
+                    <Text style={styles.badgeIcon}>⭐</Text>
+                    <Text style={styles.badgeText}>
+                      {item.status === 'ongoing' ? '当前特展' : 
+                       item.status === 'upcoming' ? '即将开展' : '已结束'}
+                    </Text>
+                  </View>
+                  <Text style={styles.specialTitle}>{item.title}</Text>
+                  <Text style={styles.specialDate}>{item.dateRange}</Text>
+                  <Text style={styles.specialDesc}>{item.description}</Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.contentSection}>
+                <Text style={styles.emptyText}>暂无特展信息</Text>
+              </View>
+            )}
           </View>
         );
       case 'news':
@@ -107,33 +254,72 @@ export default function DetailScreen() {
               <Text style={styles.sectionIcon}>🔔</Text>
               <Text style={styles.sectionTitle}>最新消息</Text>
             </View>
-            <View style={styles.newsList}>
-              {mockNews.map((item) => (
-                <TouchableOpacity key={item.id} style={styles.newsItem}>
-                  <View style={styles.newsDate}>
-                    <Text style={styles.newsDay}>{item.day}</Text>
-                    <Text style={styles.newsMonth}>{item.month}</Text>
-                  </View>
-                  <View style={styles.newsContent}>
-                    <Text style={styles.newsTitle}>{item.title}</Text>
-                    <Text style={styles.newsType}>{item.type}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {news.length > 0 ? (
+              <View style={styles.newsList}>
+                {news.map((item) => (
+                  <TouchableOpacity key={item.id} style={styles.newsItem}>
+                    <View style={styles.newsDate}>
+                      <Text style={styles.newsDay}>{item.day}</Text>
+                      <Text style={styles.newsMonth}>{item.month}</Text>
+                    </View>
+                    <View style={styles.newsContent}>
+                      <Text style={styles.newsTitle} numberOfLines={2}>{item.title}</Text>
+                      <View style={styles.newsTypeBadge}>
+                        <Text style={styles.newsType}>{item.type}</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.emptyText}>暂无消息</Text>
+            )}
           </View>
         );
     }
   };
 
+  // 渲染加载状态
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>加载中...</Text>
+      </View>
+    );
+  }
+
+  // 渲染错误状态
+  if (error || !museum) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>{error || '加载失败'}</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={() => loadMuseumDetail(true)}>
+          <Text style={styles.retryText}>重试</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadMuseumDetail(true)}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
         {/* Header Image */}
         <View style={styles.headerImage}>
           <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1566127444979-b3d2b654e3d7?w=800&h=600&fit=crop' }}
+            source={{ uri: museum.image }}
             style={styles.headerImg}
+            resizeMode="cover"
           />
           <TouchableOpacity
             style={styles.backBtn}
@@ -142,10 +328,19 @@ export default function DetailScreen() {
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.actionBtn}>
-              <Text style={styles.actionIcon}>♡</Text>
+            <TouchableOpacity 
+              style={styles.actionBtn}
+              onPress={handleFavorite}
+              disabled={favoriteLoading}
+            >
+              <Text style={[styles.actionIcon, isFavorite && styles.actionIconActive]}>
+                {isFavorite ? '♥' : '♡'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn}>
+            <TouchableOpacity 
+              style={styles.actionBtn}
+              onPress={handleShare}
+            >
               <Text style={styles.actionIcon}>↗</Text>
             </TouchableOpacity>
           </View>
@@ -153,47 +348,50 @@ export default function DetailScreen() {
 
         {/* Info Card */}
         <View style={styles.infoCard}>
-          <Text style={styles.museumTitle}>故宫博物院</Text>
+          <Text style={styles.museumTitle}>{museum.name}</Text>
           <View style={styles.museumTags}>
             <View style={styles.tagLevel}>
-              <Text style={styles.tagLevelText}>国家一级</Text>
+              <Text style={styles.tagLevelText}>{museum.level}</Text>
             </View>
-            <View style={styles.tag}>
-              <Text style={styles.tagText}>综合类</Text>
-            </View>
-            <View style={styles.tag}>
-              <Text style={styles.tagText}>历史类</Text>
-            </View>
+            {museum.type?.map((type, index) => (
+              <View key={index} style={styles.tag}>
+                <Text style={styles.tagText}>{type}</Text>
+              </View>
+            ))}
           </View>
           <View style={styles.infoList}>
             <View style={styles.infoItem}>
               <Text style={styles.infoIcon}>📍</Text>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>地址</Text>
-                <Text style={styles.infoValue}>北京市东城区景山前街4号</Text>
+                <Text style={styles.infoValue}>{museum.address}</Text>
               </View>
             </View>
             <View style={styles.infoItem}>
               <Text style={styles.infoIcon}>🕐</Text>
               <View style={styles.infoContent}>
                 <Text style={styles.infoLabel}>开放时间</Text>
-                <Text style={styles.infoValue}>08:30-17:00（周一闭馆，法定节假日除外）</Text>
+                <Text style={styles.infoValue}>{museum.openTime}</Text>
               </View>
             </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoIcon}>🎫</Text>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>门票信息</Text>
-                <Text style={styles.infoValue}>旺季60元/人，淡季40元/人（需提前预约）</Text>
+            {museum.ticketInfo && (
+              <View style={styles.infoItem}>
+                <Text style={styles.infoIcon}>🎫</Text>
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>门票信息</Text>
+                  <Text style={styles.infoValue}>{museum.ticketInfo}</Text>
+                </View>
               </View>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoIcon}>📞</Text>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>联系电话</Text>
-                <Text style={styles.infoValue}>010-85007424</Text>
+            )}
+            {museum.phone && (
+              <View style={styles.infoItem}>
+                <Text style={styles.infoIcon}>📞</Text>
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>联系电话</Text>
+                  <Text style={styles.infoValue}>{museum.phone}</Text>
+                </View>
               </View>
-            </View>
+            )}
           </View>
         </View>
 
@@ -236,13 +434,26 @@ export default function DetailScreen() {
 
       {/* Action Bar */}
       <View style={styles.actionBar}>
-        <TouchableOpacity style={styles.actionBtnSecondary}>
+        <TouchableOpacity 
+          style={styles.actionBtnSecondary}
+          onPress={handleNavigate}
+        >
           <Text style={styles.actionBtnIcon}>📍</Text>
           <Text style={styles.actionBtnText}>导航</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtnPrimary}>
-          <Text style={styles.actionBtnIcon}>✓</Text>
-          <Text style={styles.actionBtnPrimaryText}>打卡记录</Text>
+        <TouchableOpacity 
+          style={[styles.actionBtnPrimary, checkInLoading && styles.actionBtnDisabled]}
+          onPress={handleCheckIn}
+          disabled={checkInLoading}
+        >
+          {checkInLoading ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <>
+              <Text style={styles.actionBtnIcon}>✓</Text>
+              <Text style={styles.actionBtnPrimaryText}>打卡记录</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -253,6 +464,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bgWarm,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgWarm,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: COLORS.textLight,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgWarm,
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: COLORS.error,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  retryBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primary,
+    borderRadius: 20,
+  },
+  retryText: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '500',
   },
   headerImage: {
     position: 'relative',
@@ -297,6 +543,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: COLORS.textDark,
   },
+  actionIconActive: {
+    color: COLORS.error,
+  },
   infoCard: {
     backgroundColor: 'white',
     marginHorizontal: 16,
@@ -317,6 +566,7 @@ const styles = StyleSheet.create({
   },
   museumTags: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 16,
   },
@@ -365,6 +615,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textDark,
     fontWeight: '500',
+    lineHeight: 20,
   },
   tabNav: {
     flexDirection: 'row',
@@ -428,31 +679,44 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   exhibitItem: {
-    padding: 16,
-    backgroundColor: COLORS.bgWarm,
-    borderRadius: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.accent,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  exhibitNumber: {
+    width: 28,
+    height: 28,
+    backgroundColor: COLORS.accent,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exhibitNumberText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+  },
+  exhibitContent: {
+    flex: 1,
   },
   exhibitName: {
     fontSize: 15,
     fontWeight: '600',
     color: COLORS.textDark,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   exhibitDesc: {
     fontSize: 13,
     color: COLORS.textMedium,
     lineHeight: 20,
+    marginBottom: 8,
   },
   exhibitLocation: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    backgroundColor: 'white',
+    backgroundColor: COLORS.bgWarm,
     borderRadius: 8,
     alignSelf: 'flex-start',
   },
@@ -462,6 +726,9 @@ const styles = StyleSheet.create({
   locationText: {
     fontSize: 12,
     color: COLORS.textLight,
+  },
+  specialSection: {
+    gap: 16,
   },
   specialCard: {
     backgroundColor: COLORS.primary,
@@ -539,6 +806,7 @@ const styles = StyleSheet.create({
   },
   newsContent: {
     flex: 1,
+    justifyContent: 'space-between',
   },
   newsTitle: {
     fontSize: 14,
@@ -547,9 +815,23 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     lineHeight: 20,
   },
+  newsTypeBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: COLORS.accent,
+    borderRadius: 8,
+  },
   newsType: {
-    fontSize: 12,
-    color: COLORS.accent,
+    fontSize: 11,
+    color: 'white',
+    fontWeight: '500',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    paddingVertical: 20,
   },
   bottomSpacing: {
     height: 100,
@@ -590,6 +872,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: COLORS.primary,
     borderRadius: 12,
+  },
+  actionBtnDisabled: {
+    opacity: 0.7,
   },
   actionBtnIcon: {
     fontSize: 16,
