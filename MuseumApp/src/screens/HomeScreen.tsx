@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Image,
   TextInput,
   RefreshControl,
   ActivityIndicator,
@@ -16,20 +15,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { Museum, RootStackParamList, FilterOptions } from '../types';
 import { getMuseumList, getFilterOptions, searchMuseums } from '../services/museumApi';
-
-const COLORS = {
-  primary: '#2C3E2D',
-  primaryLight: '#3D4F3E',
-  secondary: '#F5F1EB',
-  accent: '#C9A962',
-  accentLight: '#D4B978',
-  textDark: '#1A1A1A',
-  textMedium: '#4A4A4A',
-  textLight: '#8A8A8A',
-  bgWarm: '#FAF8F5',
-  border: '#E8E4DE',
-  error: '#E74C3C',
-};
+import { COLORS } from '../constants/colors';
+import LazyImage from '../components/LazyImage';
 
 // 筛选标签配置
 const FILTER_CATEGORIES = [
@@ -72,15 +59,7 @@ export default function HomeScreen() {
 
   const pageSize = 10;
 
-  // 获取筛选选项
-  const loadFilterOptions = useCallback(async () => {
-    try {
-      const options = await getFilterOptions();
-      setFilterOptions(options);
-    } catch (err) {
-      console.error('获取筛选选项失败:', err);
-    }
-  }, []);
+
 
   // 加载博物馆列表
   const loadMuseums = useCallback(async (isRefresh = false) => {
@@ -194,22 +173,75 @@ export default function HomeScreen() {
     setTimeout(() => loadMuseums(true), 0);
   }, [loadMuseums]);
 
-  // 初始加载
+  // 初始加载 - 添加清理函数防止内存泄漏
   useEffect(() => {
-    loadFilterOptions();
-    loadMuseums(true);
+    let isMounted = true;
+    
+    const init = async () => {
+      if (isMounted) {
+        try {
+          const options = await getFilterOptions();
+          if (isMounted) {
+            setFilterOptions(options);
+          }
+        } catch (err) {
+          console.error('获取筛选选项失败:', err);
+        }
+        
+        // 加载博物馆列表
+        if (isMounted) {
+          try {
+            setRefreshing(true);
+            setPage(1);
+            setError(null);
+            
+            const response = await getMuseumList(
+              {
+                ...selectedFilters,
+                keyword: searchKeyword || undefined,
+              },
+              { page: 1, pageSize }
+            );
+            
+            if (isMounted) {
+              setMuseums(response.list);
+              setHasMore(response.hasMore);
+              setPage(2);
+            }
+          } catch (err) {
+            if (isMounted) {
+              setError('加载数据失败，请稍后重试');
+              console.error('加载博物馆列表失败:', err);
+            }
+          } finally {
+            if (isMounted) {
+              setLoading(false);
+              setRefreshing(false);
+            }
+          }
+        }
+      }
+    };
+    
+    init();
+    
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 渲染博物馆卡片
-  const renderMuseumCard = ({ item }: { item: Museum }) => (
+  const renderMuseumCard = useCallback(({ item }: { item: Museum }) => (
     <TouchableOpacity
       style={styles.museumCard}
       onPress={() => navigation.navigate('Detail', { museumId: item.id })}
       activeOpacity={0.9}
     >
-      <Image 
-        source={{ uri: item.image }} 
+      <LazyImage
+        uri={item.image}
         style={styles.museumImage}
+        resizeMode="cover"
       />
       <View style={styles.museumContent}>
         <View style={styles.museumHeader}>
@@ -240,7 +272,7 @@ export default function HomeScreen() {
         </View>
       </View>
     </TouchableOpacity>
-  );
+  ), [navigation]);
 
   // 渲染底部加载指示器
   const renderFooter = () => {
@@ -434,7 +466,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Museum List */}
+      {/* Museum List - 优化性能配置 */}
       <FlatList
         data={museums}
         renderItem={renderMuseumCard}
@@ -452,6 +484,17 @@ export default function HomeScreen() {
         onEndReachedThreshold={0.5}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={renderEmpty}
+        // 性能优化配置
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={10}
+        removeClippedSubviews={true}
+        updateCellsBatchingPeriod={50}
+        getItemLayout={(data, index) => ({
+          length: 280,
+          offset: 280 * index,
+          index,
+        })}
       />
 
       {/* Filter Modal */}

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   RefreshControl,
   ActivityIndicator,
   Alert,
@@ -22,21 +21,8 @@ import {
   checkFavoriteStatus,
   checkInMuseum,
 } from '../services/museumApi';
-
-const COLORS = {
-  primary: '#2C3E2D',
-  primaryLight: '#3D4F3E',
-  secondary: '#F5F1EB',
-  accent: '#C9A962',
-  accentLight: '#D4B978',
-  textDark: '#1A1A1A',
-  textMedium: '#4A4A4A',
-  textLight: '#8A8A8A',
-  bgWarm: '#FAF8F5',
-  border: '#E8E4DE',
-  error: '#E74C3C',
-  success: '#4CAF50',
-};
+import { COLORS } from '../constants/colors';
+import LazyImage from '../components/LazyImage';
 
 type TabType = 'exhibits' | 'special' | 'news';
 type DetailScreenRouteProp = RouteProp<RootStackParamList, 'Detail'>;
@@ -91,10 +77,53 @@ export default function DetailScreen() {
     }
   }, [museumId]);
 
-  // 初始加载
+  // 初始加载 - 添加清理函数
   useEffect(() => {
-    loadMuseumDetail();
-  }, [loadMuseumDetail]);
+    let isMounted = true;
+    
+    const loadData = async () => {
+      try {
+        if (isMounted) {
+          setLoading(true);
+          setError(null);
+          
+          const response = await getMuseumDetail(museumId);
+          if (isMounted) {
+            setMuseum(response.museum);
+            setExhibitions(response.exhibitions);
+            setSpecialExhibitions(response.specialExhibitions);
+            setNews(response.news);
+          }
+          
+          // 检查收藏状态
+          try {
+            const favoriteStatus = await checkFavoriteStatus(museumId);
+            if (isMounted) {
+              setIsFavorite(favoriteStatus);
+            }
+          } catch (err) {
+            console.error('检查收藏状态失败:', err);
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError('加载数据失败，请稍后重试');
+          console.error('加载博物馆详情失败:', err);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [museumId]);
 
   // 处理收藏
   const handleFavorite = useCallback(async () => {
@@ -314,10 +343,10 @@ export default function DetailScreen() {
           />
         }
       >
-        {/* Header Image */}
+        {/* Header Image - 使用懒加载 */}
         <View style={styles.headerImage}>
-          <Image
-            source={{ uri: museum.image }}
+          <LazyImage
+            uri={museum.image}
             style={styles.headerImg}
             resizeMode="cover"
           />

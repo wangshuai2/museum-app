@@ -72,6 +72,16 @@ export interface Post {
   image: string;
   likes: number;
   comments: number;
+  isLiked?: boolean;
+}
+
+// 评论类型定义
+export interface Comment {
+  id: string;
+  authorName: string;
+  authorAvatar: string;
+  content: string;
+  createTime: string;
 }
 
 // 用户类型定义

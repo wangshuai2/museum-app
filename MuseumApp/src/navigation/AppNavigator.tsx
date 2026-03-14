@@ -4,70 +4,49 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, StyleSheet } from 'react-native';
 import type { RootStackParamList, MainTabParamList } from '../types';
+import { COLORS } from '../constants/colors';
 
 // 导入屏幕组件
 import HomeScreen from '../screens/HomeScreen';
 import DetailScreen from '../screens/DetailScreen';
+import CommunityScreen from '../screens/CommunityScreen';
 import FootprintScreen from '../screens/FootprintScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 
 // 创建导航器
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// 颜色配置
-const COLORS = {
-  primary: '#2C3E2D',
-  accent: '#C9A962',
-  textLight: '#8A8A8A',
-  bgWarm: '#FAF8F5',
+// Tab图标映射
+const TAB_ICONS: { [key: string]: string } = {
+  Home: '🏛️',
+  Community: '💬',
+  Footprint: '👣',
+  Profile: '👤',
+};
+
+// Tab标签映射
+const TAB_LABELS: { [key: string]: string } = {
+  Home: '首页',
+  Community: '社区',
+  Footprint: '足迹',
+  Profile: '我的',
 };
 
 // Tab图标组件
-const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
-  const icons: { [key: string]: string } = {
-    Home: '🏛️',
-    Community: '💬',
-    Footprint: '👣',
-    Profile: '👤',
-  };
-  
-  return (
-    <View style={styles.tabIconContainer}>
-      <Text style={[styles.tabIcon, focused && styles.tabIconActive]}>
-        {icons[name] || '📍'}
-      </Text>
-    </View>
-  );
-};
-
-// Tab标签组件
-const TabLabel = ({ name, focused }: { name: string; focused: boolean }) => {
-  const labels: { [key: string]: string } = {
-    Home: '首页',
-    Community: '社区',
-    Footprint: '足迹',
-    Profile: '我的',
-  };
-  
-  return (
-    <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
-      {labels[name] || name}
+const TabBarIcon = ({ name, focused }: { name: string; focused: boolean }) => (
+  <View style={styles.tabIconContainer}>
+    <Text style={[styles.tabIcon, focused && styles.tabIconActive]}>
+      {TAB_ICONS[name] || '📍'}
     </Text>
-  );
-};
-
-// 社区页面占位
-const CommunityScreen = () => (
-  <View style={styles.placeholderContainer}>
-    <Text style={styles.placeholderText}>社区功能开发中...</Text>
   </View>
 );
 
-// 个人中心页面占位
-const ProfileScreen = () => (
-  <View style={styles.placeholderContainer}>
-    <Text style={styles.placeholderText}>个人中心开发中...</Text>
-  </View>
+// Tab标签组件
+const TabBarLabel = ({ name, focused }: { name: string; focused: boolean }) => (
+  <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+    {TAB_LABELS[name] || name}
+  </Text>
 );
 
 // 底部Tab导航
@@ -76,8 +55,12 @@ const MainTabNavigator = () => {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
-        tabBarLabel: ({ focused }) => <TabLabel name={route.name} focused={focused} />,
+        tabBarIcon: ({ focused }: { focused: boolean }) => (
+          <TabBarIcon name={route.name} focused={focused} />
+        ),
+        tabBarLabel: ({ focused }: { focused: boolean }) => (
+          <TabBarLabel name={route.name} focused={focused} />
+        ),
         tabBarStyle: styles.tabBar,
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textLight,
@@ -102,8 +85,8 @@ const AppNavigator = () => {
         }}
       >
         <Stack.Screen name="Main" component={MainTabNavigator} />
-        <Stack.Screen 
-          name="Detail" 
+        <Stack.Screen
+          name="Detail"
           component={DetailScreen}
           options={{
             animation: 'slide_from_right',
@@ -143,16 +126,6 @@ const styles = StyleSheet.create({
   tabLabelActive: {
     color: COLORS.primary,
     fontWeight: '600',
-  },
-  placeholderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.bgWarm,
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: COLORS.textLight,
   },
 });
 

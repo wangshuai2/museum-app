@@ -5,22 +5,10 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
 } from 'react-native';
 import type { Footprint } from '../types';
-
-const COLORS = {
-  primary: '#2C3E2D',
-  primaryLight: '#3D4F3E',
-  secondary: '#F5F1EB',
-  accent: '#C9A962',
-  accentLight: '#D4B978',
-  textDark: '#1A1A1A',
-  textMedium: '#4A4A4A',
-  textLight: '#8A8A8A',
-  bgWarm: '#FAF8F5',
-  border: '#E8E4DE',
-};
+import { COLORS } from '../constants/colors';
+import LazyImage from '../components/LazyImage';
 
 const mockStats = {
   visited: 12,
@@ -126,7 +114,7 @@ export default function FootprintScreen() {
                   <Text style={styles.dateDay}>{item.day}</Text>
                   <Text style={styles.dateMonth}>{item.month}</Text>
                 </View>
-                <Image source={{ uri: item.image }} style={styles.timelineImage} />
+                <LazyImage uri={item.image} style={styles.timelineImage} resizeMode="cover" />
                 <View style={styles.timelineContent}>
                   <Text style={styles.timelineMuseum}>{item.museumName}</Text>
                   <Text style={styles.timelineMeta}>已打卡 · 获得徽章</Text>
